@@ -4,61 +4,76 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>江の島ごみゼロ・マップ</title>
-    
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    
     <style>
-        /* モダンなデザイン設定 */
-        body { margin: 0; padding: 0; background: #000; font-family: sans-serif; }
+        body { margin: 0; padding: 0; font-family: sans-serif; }
         #map { height: 100vh; width: 100vw; }
         
-        /* 現在地ボタン */
-        .locate-button {
+        /* UIボタンの配置 */
+        .controls {
             position: absolute;
-            top: 20px;
-            right: 20px;
+            top: 10px;
+            right: 10px;
             z-index: 1000;
-            padding: 12px 20px;
-            background: #2ecc71;
-            color: white;
-            border: none;
-            border-radius: 30px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .btn {
+            padding: 10px 15px;
+            background: white;
+            border: 1px solid #ccc;
+            border-radius: 8px;
             font-weight: bold;
             cursor: pointer;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-            font-size: 14px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
         }
-        .locate-button:active { background: #27ae60; transform: scale(0.95); }
 
-        /* ごみ箱アイコン（絵文字） */
-        .trash-icon { font-size: 24px; text-align: center; line-height: 1; }
+        .btn-theme { background: #34495e; color: white; }
+        .btn-locate { background: #2ecc71; color: white; }
 
-        /* ポップアップをモダンに */
-        .leaflet-popup-content-wrapper {
-            background: #333;
-            color: #fff;
-            border-radius: 12px;
-            padding: 5px;
-        }
-        .leaflet-popup-tip { background: #333; }
+        .trash-icon { font-size: 24px; text-align: center; }
     </style>
 </head>
 <body>
 
-    <button class="locate-button" onclick="locateUser()">📍 現在地を追跡</button>
+    <div class="controls">
+        <button class="btn btn-theme" onclick="toggleTheme()">🌓 テーマ切替</button>
+        <button class="btn btn-locate" onclick="locateUser()">📍 現在地を追跡</button>
+    </div>
     <div id="map"></div>
 
     <script>
-        // 1. 地図の初期設定（江の島を中心に表示）
         const map = L.map('map').setView([35.2995, 139.4790], 16);
 
-        // 2. モダンな黒背景タイルを読み込む
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
-        }).addTo(map);
+        // --- テーマ設定 ---
+        const lightTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OpenStreetMap &copy; CARTO'
+        });
 
-        // 3. ごみ箱アイコンの設定
+        const darkTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OpenStreetMap &copy; CARTO'
+        });
+
+        // デフォルトは「ライト」にするよ
+        lightTiles.addTo(map);
+        let isDark = false;
+
+        function toggleTheme() {
+            if (isDark) {
+                map.removeLayer(darkTiles);
+                lightTiles.addTo(map);
+                isDark = false;
+            } else {
+                map.removeLayer(lightTiles);
+                darkTiles.addTo(map);
+                isDark = true;
+            }
+        }
+
+        // --- ごみ箱データ ---
         const trashIcon = L.divIcon({
             html: '<div class="trash-icon">🗑️</div>',
             className: 'custom-div-icon',
@@ -66,7 +81,6 @@
             iconAnchor: [15, 15]
         });
 
-        // 4. 司令官が調べたごみ箱データ（直接埋め込み！）
         const geojsonData = {
             "type": "FeatureCollection",
             "features": [
@@ -78,57 +92,21 @@
             ]
         };
 
-        // 地図にデータを追加
         L.geoJSON(geojsonData, {
-            pointToLayer: function (feature, latlng) {
-                return L.marker(latlng, {icon: trashIcon});
-            },
-            onEachFeature: function (feature, layer) {
-                if (feature.properties && feature.properties.name) {
-                    layer.bindPopup("<b>" + feature.properties.name + "</b><br>江の島を綺麗にしよう！");
-                }
-            }
+            pointToLayer: (f, l) => L.marker(l, {icon: trashIcon}),
+            onEachFeature: (f, layer) => layer.bindPopup("<b>" + f.properties.name + "</b>")
         }).addTo(map);
 
-        // 5. ライブ位置情報システム
+        // --- 位置情報 ---
         let locationMarker, locationCircle;
-
         function locateUser() {
-            // watch: true で移動を追いかけ続けるよ！
-            map.locate({
-                watch: true, 
-                setView: true, 
-                maxZoom: 18,
-                enableHighAccuracy: true
-            });
+            map.locate({watch: true, setView: true, maxZoom: 18, enableHighAccuracy: true});
         }
 
         map.on('locationfound', function(e) {
-            const radius = e.accuracy / 2;
-
-            if (locationMarker) {
-                map.removeLayer(locationMarker);
-                map.removeLayer(locationCircle);
-            }
-
-            // 現在地の青い丸（ライブで動く！）
-            locationMarker = L.circleMarker(e.latlng, {
-                color: '#2ecc71',
-                fillColor: '#2ecc71',
-                fillOpacity: 1,
-                radius: 7,
-                weight: 3
-            }).addTo(map).bindPopup("司令官、現在地に到着！");
-
-            locationCircle = L.circle(e.latlng, radius, {
-                color: '#2ecc71',
-                fillOpacity: 0.1,
-                weight: 1
-            }).addTo(map);
-        });
-
-        map.on('locationerror', function(e) {
-            alert("位置情報が取得できなかったよ。設定を確認してみてね！");
+            if (locationMarker) { map.removeLayer(locationMarker); map.removeLayer(locationCircle); }
+            locationMarker = L.circleMarker(e.latlng, { color: '#2ecc71', fillColor: '#2ecc71', fillOpacity: 1, radius: 7 }).addTo(map);
+            locationCircle = L.circle(e.latlng, e.accuracy / 2, { color: '#2ecc71', fillOpacity: 0.1 }).addTo(map);
         });
     </script>
 </body>
