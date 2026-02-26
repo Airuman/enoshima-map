@@ -4,51 +4,65 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>江の島ごみゼロ・マップ</title>
+    
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
     <style>
-        body { margin: 0; padding: 0; font-family: sans-serif; }
+        /* 司令官の見やすさ重視！ベースは黒背景だよ */
+        body { margin: 0; padding: 0; background: #000; font-family: sans-serif; }
         #map { height: 100vh; width: 100vw; }
         
         /* UIボタンの配置 */
         .controls {
             position: absolute;
-            top: 10px;
-            right: 10px;
+            top: 15px;
+            right: 15px;
             z-index: 1000;
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 12px;
         }
 
         .btn {
-            padding: 10px 15px;
-            background: white;
-            border: 1px solid #ccc;
+            padding: 12px 18px;
+            border: none;
             border-radius: 8px;
             font-weight: bold;
             cursor: pointer;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+            font-size: 14px;
+            transition: transform 0.1s;
         }
+        .btn:active { transform: scale(0.95); }
 
-        .btn-theme { background: #34495e; color: white; }
+        .btn-theme { background: #34495e; color: white; border: 1px solid #2c3e50; }
         .btn-locate { background: #2ecc71; color: white; }
 
-        .trash-icon { font-size: 24px; text-align: center; }
+        .trash-icon { font-size: 26px; text-align: center; line-height: 1; filter: drop-shadow(0px 2px 2px rgba(0,0,0,0.5)); }
+
+        .leaflet-popup-content-wrapper {
+            background: #333;
+            color: #fff;
+            border-radius: 8px;
+        }
+        .leaflet-popup-tip { background: #333; }
     </style>
 </head>
 <body>
 
     <div class="controls">
         <button class="btn btn-theme" onclick="toggleTheme()">🌓 テーマ切替</button>
-        <button class="btn btn-locate" onclick="locateUser()">📍 現在地を追跡</button>
+        <button class="btn btn-locate" onclick="locateUser()">📍 現在地へ</button>
     </div>
+    
     <div id="map"></div>
 
     <script>
+        // 1. 地図の初期設定
         const map = L.map('map').setView([35.2995, 139.4790], 16);
 
-        // --- テーマ設定 ---
+        // 2. テーマ設定（見やすい黒背景をデフォルトにしたよ！）
         const lightTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
             attribution: '&copy; OpenStreetMap &copy; CARTO'
         });
@@ -57,9 +71,8 @@
             attribution: '&copy; OpenStreetMap &copy; CARTO'
         });
 
-        // デフォルトは「ライト」にするよ
-        lightTiles.addTo(map);
-        let isDark = false;
+        darkTiles.addTo(map); // 最初はダークモード
+        let isDark = true;
 
         function toggleTheme() {
             if (isDark) {
@@ -73,7 +86,7 @@
             }
         }
 
-        // --- ごみ箱データ ---
+        // 3. ごみ箱アイコンとデータ
         const trashIcon = L.divIcon({
             html: '<div class="trash-icon">🗑️</div>',
             className: 'custom-div-icon',
@@ -97,16 +110,52 @@
             onEachFeature: (f, layer) => layer.bindPopup("<b>" + f.properties.name + "</b>")
         }).addTo(map);
 
-        // --- 位置情報 ---
+        // 4. 快適なライブ位置情報システム
         let locationMarker, locationCircle;
+        let forceFocus = false; // ボタンを押した時だけ移動させるためのフラグだよ
+
         function locateUser() {
-            map.locate({watch: true, setView: true, maxZoom: 18, enableHighAccuracy: true});
+            // 位置情報の監視をスタート
+            map.locate({
+                watch: true, 
+                enableHighAccuracy: true
+            });
+            // ボタンが押されたから、次に位置がわかった時に強制ジャンプさせるよ
+            forceFocus = true;
         }
 
         map.on('locationfound', function(e) {
-            if (locationMarker) { map.removeLayer(locationMarker); map.removeLayer(locationCircle); }
-            locationMarker = L.circleMarker(e.latlng, { color: '#2ecc71', fillColor: '#2ecc71', fillOpacity: 1, radius: 7 }).addTo(map);
-            locationCircle = L.circle(e.latlng, e.accuracy / 2, { color: '#2ecc71', fillOpacity: 0.1 }).addTo(map);
+            const radius = e.accuracy / 2;
+
+            if (locationMarker) {
+                map.removeLayer(locationMarker);
+                map.removeLayer(locationCircle);
+            }
+
+            locationMarker = L.circleMarker(e.latlng, {
+                color: '#2ecc71',
+                fillColor: '#2ecc71',
+                fillOpacity: 1,
+                radius: 8,
+                weight: 3
+            }).addTo(map);
+
+            locationCircle = L.circle(e.latlng, radius, {
+                color: '#2ecc71',
+                fillOpacity: 0.15,
+                weight: 1
+            }).addTo(map);
+
+            // ボタンを押した直後だけ、カメラを現在地にシュパッと移動！
+            if (forceFocus) {
+                map.setView(e.latlng, 18);
+                forceFocus = false; // 一度移動したらフラグをリセットして、勝手に動かないようにするよ
+            }
+        });
+
+        map.on('locationerror', function(e) {
+            alert("位置情報が見つからなかったよ。");
+            forceFocus = false;
         });
     </script>
 </body>
